@@ -12,6 +12,7 @@ export function Hud() {
   const spaces = useSolara((s) => s.spaces);
   const blockers = useSolara((s) => s.blockers);
   const floorHeight = useSolara((s) => s.floorHeight);
+  const live = useSolara((s) => s.livePose);
 
   const dayKey = `${sun.date.getFullYear()}-${sun.date.getMonth()}-${sun.date.getDate()}`;
   const summary = useMemo(
@@ -58,6 +59,16 @@ export function Hud() {
         <Stat label="Direct today" value={formatHours(summary.hoursDirect)} />
         <Stat label="Floor" value={`${floorHeight.toFixed(1)} m`} />
         <Stat label="Site elev." value={`${Math.round(site.elevation)} m`} />
+        {live.gpsActive || live.source !== "none" ? (
+          <Stat
+            label="You"
+            value={
+              live.source === "none"
+                ? "—"
+                : `${formatAzimuth(live.heading).split(" ")[0]} · ${Math.round(live.accuracyM)} m`
+            }
+          />
+        ) : null}
       </div>
     </div>
   );

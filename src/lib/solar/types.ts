@@ -25,6 +25,8 @@ export type SunTimes = {
   goldenHourEnd: Date;
 };
 
+export type BlockerSource = "demo" | "osm" | "user";
+
 export type Blocker = {
   id: string;
   name: string;
@@ -40,6 +42,8 @@ export type Blocker = {
   rotation: number;
   /** Ground elevation of the base, meters above site ground. */
   baseElevation: number;
+  source?: BlockerSource;
+  osmId?: string;
 };
 
 export type Space = {
@@ -52,6 +56,21 @@ export type Space = {
   rotation: number;
   /** Floor height above site ground, meters. */
   elevation: number;
+};
+
+/** Georeferenced floor-plan image, ENU metres from the site pin. */
+export type FloorPlan = {
+  src: string;
+  /** Image pixel size, used to keep aspect when scaling. */
+  pixelW: number;
+  pixelH: number;
+  east: number;
+  north: number;
+  widthM: number;
+  depthM: number;
+  /** Clockwise from true north, degrees. */
+  rotation: number;
+  opacity: number;
 };
 
 export type WalkPoint = {
@@ -104,6 +123,7 @@ export type DaySummary = {
   lastDirect: Date | null;
   samples: DaySample[];
   dominantBlocker: string | null;
+  spaceName: string | null;
 };
 
 export type YearDay = {

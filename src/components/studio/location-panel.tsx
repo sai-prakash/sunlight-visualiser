@@ -3,6 +3,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useSolara } from "@/lib/store";
 import { fetchElevation, fetchTerrainRing, searchPlaces, type GeoHit } from "@/lib/geo/geocode";
+import { fetchOsmBuildings } from "@/lib/geo/osm-buildings";
 import { emptyHorizon, rasterizeTerrain } from "@/lib/solar/occlusion";
 import { LocateFixed } from "lucide-react";
 
@@ -13,6 +14,9 @@ export function LocationPanel({ onClose }: { onClose?: () => void }) {
   const setFloorHeight = useSolara((s) => s.setFloorHeight);
   const setUserHorizon = useSolara((s) => s.setUserHorizon);
   const resetDemo = useSolara((s) => s.resetDemo);
+  const resetGeometry = useSolara((s) => s.resetGeometry);
+  const replaceOsmBlockers = useSolara((s) => s.replaceOsmBlockers);
+  const setView = useSolara((s) => s.setView);
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<GeoHit[]>([]);
   const [busy, setBusy] = useState(false);
@@ -22,6 +26,10 @@ export function LocationPanel({ onClose }: { onClose?: () => void }) {
     setBusy(true);
     setErr(null);
     try {
+      const dLat = (hit.lat - site.lat) * 111320;
+      const dLon = (hit.lon - site.lon) * 111320 * Math.cos((site.lat * Math.PI) / 180);
+      const far = Math.hypot(dLat, dLon) > 90;
+      if (far) resetGeometry();
       const elev = hit.elevation ?? (await fetchElevation(hit.lat, hit.lon)) ?? 0;
       setSite({
         lat: hit.lat,
@@ -30,12 +38,17 @@ export function LocationPanel({ onClose }: { onClose?: () => void }) {
         label: hit.label,
         timezone: hit.timezone,
       });
-      const ring = await fetchTerrainRing(hit.lat, hit.lon);
+      const [ring, osm] = await Promise.all([
+        fetchTerrainRing(hit.lat, hit.lon),
+        fetchOsmBuildings(hit.lat, hit.lon).catch(() => []),
+      ]);
       if (ring.length) {
         const h = emptyHorizon();
         rasterizeTerrain({ x: 0, y: floorHeight, z: 0 }, elev, ring, h);
         setUserHorizon(h);
       }
+      if (osm.length) replaceOsmBlockers(osm);
+      setView("map");
       onClose?.();
     } catch {
       setErr("Could not load elevation for that place.");
@@ -77,7 +90,7 @@ export function LocationPanel({ onClose }: { onClose?: () => void }) {
         setBusy(false);
         setErr("Permission denied — search a place instead.");
       },
-      { enableHighAccuracy: true, timeout: 8000 },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 2000 },
     );
   };
 
@@ -127,7 +140,8 @@ export function LocationPanel({ onClose }: { onClose?: () => void }) {
         <span className="tabular-nums text-fg">{floorHeight.toFixed(1)} m</span>
       </label>
       <p className="text-xs text-muted">
-        {site.lat.toFixed(4)}°N {site.lon.toFixed(4)}°E · mag. {site.magDeclination.toFixed(1)}°
+        {site.lat.toFixed(5)}°N {site.lon.toFixed(5)}°E · mag. {site.magDeclination >= 0 ? "+" : ""}
+        {site.magDeclination.toFixed(2)}° · WMM2025
       </p>
       <Button variant="ghost" onClick={resetDemo}>
         Restore sample plot

@@ -5,7 +5,9 @@ import * as THREE from "three";
 import { useSolara } from "@/lib/store";
 import { solarPosition, sunDirection } from "@/lib/solar/spa";
 import { occlude, rasterizeBlockers, emptyHorizon, mergeHorizon, spaceSamplePoints } from "@/lib/solar/occlusion";
-import type { Blocker, Space } from "@/lib/solar/types";
+import type { Blocker, FloorPlan, Space } from "@/lib/solar/types";
+import { enuToScene } from "@/lib/geo/enu";
+import { floorPlanScene } from "@/lib/geo/floor-plan";
 import { uid } from "@/lib/utils";
 
 const UP = new THREE.Vector3(0, 1, 0);
@@ -14,14 +16,16 @@ function useEffectiveHorizon() {
   const spaces = useSolara((s) => s.spaces);
   const blockers = useSolara((s) => s.blockers);
   const userHorizon = useSolara((s) => s.userHorizon);
+  const selectedId = useSolara((s) => s.selectedId);
   return useMemo(() => {
     const h = emptyHorizon();
-    const origin = spaces[0]
-      ? { x: spaces[0].cx, y: spaces[0].elevation + 0.05, z: spaces[0].cz }
+    const space = spaces.find((s) => s.id === selectedId) ?? spaces[0];
+    const origin = space
+      ? { x: space.cx, y: space.elevation + 0.05, z: space.cz }
       : { x: 0, y: 15, z: 0 };
     rasterizeBlockers(origin, blockers, h);
     return mergeHorizon(h, userHorizon);
-  }, [spaces, blockers, userHorizon]);
+  }, [spaces, blockers, userHorizon, selectedId]);
 }
 
 function Building({
@@ -164,6 +168,28 @@ function WalkPath() {
   );
 }
 
+function YouAreHere({ y }: { y: number }) {
+  const pose = useSolara((s) => s.livePose);
+  if (!pose.gpsActive && !pose.hasLidar) return null;
+  if (pose.accuracyM > 120 && !pose.hasLidar) return null;
+  const { x, z } = enuToScene({ east: pose.east, north: pose.north, up: 0 });
+  const yaw = (-pose.heading * Math.PI) / 180;
+  const r = Math.min(10, Math.max(1.4, pose.accuracyM / 3));
+  return (
+    <group position={[x, y, z]} rotation={[0, yaw, 0]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, 0]}>
+        <circleGeometry args={[r, 28]} />
+        <meshBasicMaterial color="#e8b84a" transparent opacity={0.14} depthWrite={false} />
+      </mesh>
+      <mesh position={[0, 0.95, 0]} rotation={[0, 0, 0]} castShadow>
+        <coneGeometry args={[0.32, 1.7, 10]} />
+        <meshStandardMaterial color="#f2f1ee" roughness={0.45} />
+      </mesh>
+      <Line points={[[0, 0.08, 0], [0, 0.08, -2.6]]} color="#e8b84a" lineWidth={2} />
+    </group>
+  );
+}
+
 function NorthMark({ y }: { y: number }) {
   return (
     <group>
@@ -207,10 +233,8 @@ function SunRig({ horizon }: { horizon: number[] }) {
   const [skyPos, setSkyPos] = useState<[number, number, number]>([20, 40, 10]);
   const lastSky = useRef(0);
 
-  useFrame((state, delta) => {
-    const d = Math.min(delta, 0.1);
+  useFrame((state) => {
     const store = useSolara.getState();
-    if (store.playing) store.tick(d * 1000);
     const date = new Date(store.now);
     const pos = solarPosition(date, store.site.lat, store.site.lon, store.site.elevation);
     const dir = sunDirection(pos.azimuth, pos.altitude);
@@ -412,6 +436,36 @@ function DrawLayer({ horizon }: { horizon: number[] }) {
   );
 }
 
+function FloorPlanMesh({ plan }: { plan: FloorPlan }) {
+  const [tex, setTex] = useState<THREE.Texture | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const loader = new THREE.TextureLoader();
+    loader.load(plan.src, (t) => {
+      if (!alive) {
+        t.dispose();
+        return;
+      }
+      t.colorSpace = THREE.SRGBColorSpace;
+      t.anisotropy = 8;
+      t.needsUpdate = true;
+      setTex(t);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [plan.src]);
+  useEffect(() => () => tex?.dispose(), [tex]);
+  const pose = floorPlanScene(plan);
+  if (!tex) return null;
+  return (
+    <mesh position={[pose.x, pose.y, pose.z]} rotation={[-Math.PI / 2, 0, pose.rot]}>
+      <planeGeometry args={[plan.widthM, plan.depthM]} />
+      <meshBasicMaterial map={tex} transparent opacity={plan.opacity} depthWrite={false} />
+    </mesh>
+  );
+}
+
 function Ground({ y }: { y: number }) {
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, y, 0]} receiveShadow>
@@ -429,6 +483,7 @@ export function SiteWorld({ hero = false }: { hero?: boolean }) {
   const setSelected = useSolara((s) => s.setSelected);
   const stampSkyline = useSolara((s) => s.stampSkyline);
   const floorHeight = useSolara((s) => s.floorHeight);
+  const floorPlan = useSolara((s) => s.floorPlan);
   const horizon = useEffectiveHorizon();
   const { controls } = useThree() as { controls?: { enabled: boolean } };
 
@@ -456,6 +511,7 @@ export function SiteWorld({ hero = false }: { hero?: boolean }) {
       <SunRig horizon={horizon} />
       <fog attach="fog" args={["#b9c4d1", 55, 160]} />
       <Ground y={0} />
+      {floorPlan ? <FloorPlanMesh plan={floorPlan} /> : null}
       <Grid
         args={[80, 80]}
         position={[0, 0.01, 0]}
@@ -470,6 +526,7 @@ export function SiteWorld({ hero = false }: { hero?: boolean }) {
         infiniteGrid
       />
       <NorthMark y={0.03} />
+      {!hero && <YouAreHere y={floorHeight + 0.02} />}
       {blockers.map((b) => (
         <Building key={b.id} b={b} selected={selectedId === b.id} onPick={onPickBuilding} />
       ))}

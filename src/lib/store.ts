@@ -1,14 +1,15 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { uid } from "@/lib/utils";
-import { magneticDeclination } from "@/lib/geo/wmm";
+import { decimalYear, magneticDeclination } from "@/lib/geo/wmm";
 import { emptyHorizon, mergeHorizon, stampHorizonPoint } from "@/lib/solar/occlusion";
-import type { Blocker, Site, Space, WalkPoint, WalkSession } from "@/lib/solar/types";
+import type { Blocker, FloorPlan, Site, Space, WalkPoint, WalkSession } from "@/lib/solar/types";
 import { HORIZON_BINS } from "@/lib/solar/types";
 import { demoBlockers, demoHorizon, demoSite, demoSpaces, demoWalk } from "@/lib/site/demo";
+import { EMPTY_POSE, type LivePose } from "@/lib/ar/pose-tracker";
 
-export type Tool = "orbit" | "space" | "blocker" | "skyline" | "walk";
-export type StudioView = "site" | "year" | "ar";
+export type Tool = "orbit" | "space" | "blocker" | "skyline" | "walk" | "plan";
+export type StudioView = "map" | "site" | "year" | "ar";
 
 type Persisted = {
   site: Site;
@@ -17,6 +18,8 @@ type Persisted = {
   userHorizon: number[];
   walks: WalkSession[];
   floorHeight: number;
+  headingOffset: number;
+  floorPlan: FloorPlan | null;
 };
 
 type State = Persisted & {
@@ -28,6 +31,8 @@ type State = Persisted & {
   recording: boolean;
   playSpeed: number;
   hydrated: boolean;
+  livePose: LivePose;
+  headingLocked: boolean;
   setNow: (ts: number) => void;
   setPlaying: (v: boolean) => void;
   setTool: (t: Tool) => void;
@@ -49,6 +54,13 @@ type State = Persisted & {
   finishWalk: () => void;
   resetDemo: () => void;
   tick: (dtMs: number) => void;
+  setLivePose: (p: LivePose) => void;
+  addHeadingOffset: (delta: number) => void;
+  resetHeadingOffset: () => void;
+  setFloorPlan: (p: FloorPlan | null) => void;
+  updateFloorPlan: (partial: Partial<FloorPlan>) => void;
+  replaceOsmBlockers: (osm: Blocker[]) => void;
+  resetGeometry: () => void;
 };
 
 const seed = (): Persisted => ({
@@ -58,6 +70,8 @@ const seed = (): Persisted => ({
   userHorizon: demoHorizon(),
   walks: [demoWalk()],
   floorHeight: 15.2,
+  headingOffset: 0,
+  floorPlan: null,
 });
 
 export const useSolara = create<State>()(
@@ -67,11 +81,13 @@ export const useSolara = create<State>()(
       now: Date.now(),
       playing: false,
       tool: "orbit",
-      view: "site",
+      view: "map",
       selectedId: null,
       recording: false,
       playSpeed: 240,
       hydrated: false,
+      livePose: EMPTY_POSE,
+      headingLocked: false,
       setNow: (ts) => set({ now: ts, playing: false }),
       setPlaying: (v) => set({ playing: v }),
       setTool: (t) => set({ tool: t }),
@@ -80,7 +96,12 @@ export const useSolara = create<State>()(
       setSite: (partial) => {
         const site = { ...get().site, ...partial };
         if (partial.lat != null || partial.lon != null) {
-          site.magDeclination = magneticDeclination(site.lat, site.lon, new Date(get().now).getFullYear());
+          site.magDeclination = magneticDeclination(
+            site.lat,
+            site.lon,
+            decimalYear(new Date(get().now)),
+            site.elevation / 1000,
+          );
         }
         set({ site });
       },
@@ -88,21 +109,27 @@ export const useSolara = create<State>()(
         const spaces = get().spaces.map((s) => ({ ...s, elevation: h }));
         set({ floorHeight: h, spaces });
       },
-      addSpace: (s) =>
+      addSpace: (s) => {
+        const id = s.id ?? uid("space");
         set({
-          spaces: [...get().spaces, { ...s, id: s.id ?? uid("space") }],
+          spaces: [...get().spaces, { ...s, id }],
           tool: "orbit",
-        }),
+          selectedId: id,
+        });
+      },
       updateSpace: (id, partial) =>
         set({
           spaces: get().spaces.map((s) => (s.id === id ? { ...s, ...partial } : s)),
         }),
       removeSpace: (id) => set({ spaces: get().spaces.filter((s) => s.id !== id) }),
-      addBlocker: (b) =>
+      addBlocker: (b) => {
+        const id = b.id ?? uid("blk");
         set({
-          blockers: [...get().blockers, { ...b, id: b.id ?? uid("blk") }],
+          blockers: [...get().blockers, { ...b, id, source: b.source ?? "user" }],
           tool: "orbit",
-        }),
+          selectedId: id,
+        });
+      },
       updateBlocker: (id, partial) =>
         set({
           blockers: get().blockers.map((b) => (b.id === id ? { ...b, ...partial } : b)),
@@ -144,15 +171,46 @@ export const useSolara = create<State>()(
         );
         set({ walks, recording: false, tool: "orbit" });
       },
-      resetDemo: () => set({ ...seed(), now: Date.now(), selectedId: null }),
+      resetDemo: () =>
+        set({
+          ...seed(),
+          now: Date.now(),
+          selectedId: null,
+          headingLocked: false,
+          livePose: EMPTY_POSE,
+          view: get().view,
+        }),
       tick: (dtMs) => {
         if (!get().playing) return;
         const speed = get().playSpeed;
         set({ now: get().now + dtMs * speed });
       },
+      setLivePose: (p) => set({ livePose: p }),
+      addHeadingOffset: (delta) =>
+        set({ headingOffset: get().headingOffset + delta, headingLocked: true }),
+      resetHeadingOffset: () => set({ headingOffset: 0, headingLocked: false }),
+      setFloorPlan: (p) => set({ floorPlan: p, tool: p ? "plan" : get().tool }),
+      updateFloorPlan: (partial) => {
+        const cur = get().floorPlan;
+        if (!cur) return;
+        set({ floorPlan: { ...cur, ...partial } });
+      },
+      replaceOsmBlockers: (osm) => {
+        const kept = get().blockers.filter((b) => b.source === "user");
+        set({ blockers: [...kept, ...osm] });
+      },
+      resetGeometry: () =>
+        set({
+          spaces: [],
+          blockers: [],
+          userHorizon: emptyHorizon(),
+          walks: [],
+          floorPlan: null,
+          selectedId: null,
+        }),
     }),
     {
-      name: "solara.v1",
+      name: "solara.v3",
       partialize: (s) => ({
         site: s.site,
         spaces: s.spaces,
@@ -160,9 +218,22 @@ export const useSolara = create<State>()(
         userHorizon: s.userHorizon,
         walks: s.walks,
         floorHeight: s.floorHeight,
+        headingOffset: s.headingOffset,
+        floorPlan: s.floorPlan,
       }),
       onRehydrateStorage: () => (state) => {
-        if (state) state.hydrated = true;
+        if (state) {
+          state.hydrated = true;
+          if (!state.floorPlan) state.floorPlan = null;
+          if (state.site) {
+            state.site.magDeclination = magneticDeclination(
+              state.site.lat,
+              state.site.lon,
+              decimalYear(),
+              state.site.elevation / 1000,
+            );
+          }
+        }
       },
     },
   ),

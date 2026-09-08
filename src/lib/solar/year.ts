@@ -4,15 +4,24 @@ import type { Blocker, DaySample, DaySummary, Site, Space, YearDay } from "./typ
 
 const STEP_MIN = 10;
 
+export function pickSpace(spaces: Space[], spaceId?: string | null): Space | undefined {
+  if (spaceId) {
+    const hit = spaces.find((s) => s.id === spaceId);
+    if (hit) return hit;
+  }
+  return spaces[0];
+}
+
 export function analyzeDay(
   date: Date,
   site: Site,
   spaces: Space[],
   blockers: Blocker[],
   horizon: number[],
+  spaceId?: string | null,
 ): DaySummary {
   const times = sunTimes(date, site.lat, site.lon, site.elevation);
-  const space = spaces[0];
+  const space = pickSpace(spaces, spaceId);
   const samples: DaySample[] = [];
   if (!space) {
     return {
@@ -26,6 +35,7 @@ export function analyzeDay(
       lastDirect: null,
       samples,
       dominantBlocker: null,
+      spaceName: null,
     };
   }
 
@@ -94,6 +104,7 @@ export function analyzeDay(
     lastDirect,
     samples,
     dominantBlocker,
+    spaceName: space.name,
   };
 }
 
@@ -103,27 +114,36 @@ export function analyzeYear(
   spaces: Space[],
   blockers: Blocker[],
   horizon: number[],
+  spaceId?: string | null,
 ): YearDay[] {
   const days: YearDay[] = [];
   const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
   const total = leap ? 366 : 365;
-  // Every 3 days is visually dense and still captures solstice curvature.
   for (let doy = 1; doy <= total; doy += 2) {
     const d = new Date(year, 0, doy, 12, 0, 0);
-    const summary = analyzeDay(d, site, spaces, blockers, horizon);
+    const summary = analyzeDay(d, site, spaces, blockers, horizon, spaceId);
     days.push({
       doy,
       month: d.getMonth(),
       day: d.getDate(),
       hoursDirect: summary.hoursDirect,
-      firstHour: summary.firstDirect ? summary.firstDirect.getHours() + summary.firstDirect.getMinutes() / 60 : null,
-      lastHour: summary.lastDirect ? summary.lastDirect.getHours() + summary.lastDirect.getMinutes() / 60 : null,
+      firstHour: summary.firstDirect
+        ? summary.firstDirect.getHours() + summary.firstDirect.getMinutes() / 60
+        : null,
+      lastHour: summary.lastDirect
+        ? summary.lastDirect.getHours() + summary.lastDirect.getMinutes() / 60
+        : null,
     });
   }
   return days;
 }
 
-export function solsticeDates(year: number): { summer: Date; winter: Date; spring: Date; autumn: Date } {
+export function solsticeDates(year: number): {
+  summer: Date;
+  winter: Date;
+  spring: Date;
+  autumn: Date;
+} {
   return {
     spring: new Date(year, 2, 20, 12, 0, 0),
     summer: new Date(year, 5, 21, 12, 0, 0),
@@ -135,8 +155,9 @@ export function solsticeDates(year: number): { summer: Date; winter: Date; sprin
 export function insightCopy(summary: DaySummary, winterH: number, summerH: number): string {
   const h = summary.hoursDirect;
   const parts: string[] = [];
+  const who = summary.spaceName ? `${summary.spaceName}: ` : "";
   if (h < 0.15) {
-    parts.push("No meaningful direct sun today on the marked space.");
+    parts.push(`${who}no meaningful direct sun today.`);
   } else {
     const first = summary.firstDirect
       ? summary.firstDirect.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
@@ -145,7 +166,7 @@ export function insightCopy(summary: DaySummary, winterH: number, summerH: numbe
       ? summary.lastDirect.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
       : null;
     if (first && last) {
-      parts.push(`Direct sun ${first}–${last}.`);
+      parts.push(`${who}direct sun ${first}–${last}.`);
     }
   }
   if (summary.dominantBlocker) {
@@ -153,7 +174,9 @@ export function insightCopy(summary: DaySummary, winterH: number, summerH: numbe
   }
   if (Number.isFinite(winterH) && Number.isFinite(summerH)) {
     if (winterH > summerH + 0.8) {
-      parts.push(`Winter solstice ${winterH.toFixed(1)}h · summer ${summerH.toFixed(1)}h — a south opening with a north mass behind it.`);
+      parts.push(
+        `Winter solstice ${winterH.toFixed(1)}h · summer ${summerH.toFixed(1)}h — a south opening with a north mass behind it.`,
+      );
     } else {
       parts.push(`Winter solstice ${winterH.toFixed(1)}h · summer ${summerH.toFixed(1)}h.`);
     }

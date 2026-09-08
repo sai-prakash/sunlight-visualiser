@@ -1,5 +1,5 @@
 import { uid } from "@/lib/utils";
-import { magneticDeclination } from "@/lib/geo/wmm";
+import { decimalYear, magneticDeclination } from "@/lib/geo/wmm";
 import { emptyHorizon } from "@/lib/solar/occlusion";
 import type { Blocker, Site, Space, WalkSession } from "@/lib/solar/types";
 
@@ -11,9 +11,9 @@ export function demoSite(): Site {
     lat,
     lon,
     elevation: 912,
-    label: "South terrace · sample plot",
+    label: "Koramangala · sample plot",
     timezone: "Asia/Kolkata",
-    magDeclination: magneticDeclination(lat, lon, 2026),
+    magDeclination: magneticDeclination(lat, lon, decimalYear()),
   };
 }
 
@@ -45,6 +45,7 @@ export function demoBlockers(): Blocker[] {
       height: 18.4,
       rotation: 0,
       baseElevation: 0,
+      source: "demo",
     },
     {
       id: uid("blk"),
@@ -57,6 +58,7 @@ export function demoBlockers(): Blocker[] {
       height: 44,
       rotation: 8,
       baseElevation: 0,
+      source: "demo",
     },
     {
       id: uid("blk"),
@@ -69,6 +71,7 @@ export function demoBlockers(): Blocker[] {
       height: 22,
       rotation: -6,
       baseElevation: 0,
+      source: "demo",
     },
     {
       id: uid("blk"),
@@ -81,6 +84,7 @@ export function demoBlockers(): Blocker[] {
       height: 27,
       rotation: 2,
       baseElevation: 0,
+      source: "demo",
     },
   ];
 }

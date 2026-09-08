@@ -5,18 +5,18 @@ import { Button } from "@/components/ui/button";
 const STEPS = [
   {
     n: "01",
-    title: "Pin the site",
-    body: "GPS or a neighbourhood search. Elevation is pulled for the plot and the land around it.",
+    title: "Pin the plot",
+    body: "Search a neighbourhood or drop a pin. Nearby buildings and land elevation load in automatically.",
   },
   {
     n: "02",
-    title: "Mark the open space",
-    body: "Draw the terrace, courtyard, or room. That rectangle is what we score for the year.",
+    title: "Lay the floor plan",
+    body: "Upload the plan, rotate it onto the satellite, then draw the balcony or room you care about.",
   },
   {
     n: "03",
-    title: "Trace what stands in front",
-    body: "A neighbouring tower, a hill, your own wing. Red is cut light. Gold is direct sun.",
+    title: "Read the hours",
+    body: "Gold is direct sun, red is cut light. Scrub any hour, or open the camera and see the rays on the real sky.",
   },
 ];
 
@@ -48,8 +48,9 @@ export function LandingPage() {
               See the sun before you buy.
             </h1>
             <p className="mt-4 max-w-md text-base leading-relaxed text-muted">
-              Accurate solar position for any hour of the year. Mark a space, trace the towers that steal
-              the light, walk the rooms. Red is blocked. Gold is open sky.
+              Pin a building on the map, drop the floor plan, mark the balcony. NOAA solar position
+              for every hour of the year, with neighbouring towers cutting the light in red. Live
+              camera overlay uses a pinhole projection of the true sun path.
             </p>
             <div className="mt-7 flex flex-col gap-3 sm:flex-row">
               <Button asChild size="lg">

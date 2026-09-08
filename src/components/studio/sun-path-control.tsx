@@ -14,12 +14,12 @@ export function SunPathControl() {
   const site = useSolara((s) => s.site);
   const spaces = useSolara((s) => s.spaces);
   const blockers = useSolara((s) => s.blockers);
+  const selectedId = useSolara((s) => s.selectedId);
   const horizon = sun.horizon;
 
-  const dayKey = `${sun.date.getFullYear()}-${sun.date.getMonth()}-${sun.date.getDate()}-${spaces.length}-${blockers.length}`;
+  const dayKey = `${sun.date.getFullYear()}-${sun.date.getMonth()}-${sun.date.getDate()}-${selectedId ?? ""}-${spaces.length}-${blockers.length}`;
   const summary = useMemo(
-    () => analyzeDay(sun.date, site, spaces, blockers, horizon),
-    // horizon identity changes often; dayKey captures geometry + calendar day
+    () => analyzeDay(sun.date, site, spaces, blockers, horizon, selectedId),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [dayKey, site.lat, site.lon],
   );

@@ -13,27 +13,29 @@ export function YearPanel() {
   const site = useSolara((s) => s.site);
   const spaces = useSolara((s) => s.spaces);
   const blockers = useSolara((s) => s.blockers);
+  const selectedId = useSolara((s) => s.selectedId);
   const setNow = useSolara((s) => s.setNow);
+
   const year = sun.date.getFullYear();
 
   const days = useMemo(
-    () => analyzeYear(year, site, spaces, blockers, horizon),
-    [year, site, spaces, blockers, horizon],
+    () => analyzeYear(year, site, spaces, blockers, horizon, selectedId),
+    [year, site, spaces, blockers, horizon, selectedId],
   );
 
   const marks = solsticeDates(year);
   const winter = useMemo(
-    () => analyzeDay(marks.winter, site, spaces, blockers, horizon),
-    [year, site, spaces, blockers, horizon],
+    () => analyzeDay(marks.winter, site, spaces, blockers, horizon, selectedId),
+    [year, site, spaces, blockers, horizon, selectedId],
   );
   const summer = useMemo(
-    () => analyzeDay(marks.summer, site, spaces, blockers, horizon),
-    [year, site, spaces, blockers, horizon],
+    () => analyzeDay(marks.summer, site, spaces, blockers, horizon, selectedId),
+    [year, site, spaces, blockers, horizon, selectedId],
   );
-  const dayStamp = `${sun.date.getFullYear()}-${sun.date.getMonth()}-${sun.date.getDate()}`;
+  const dayStamp = `${sun.date.getFullYear()}-${sun.date.getMonth()}-${sun.date.getDate()}-${selectedId ?? ""}`;
   const today = useMemo(
-    () => analyzeDay(sun.date, site, spaces, blockers, horizon),
-    [dayStamp, site, spaces, blockers, horizon],
+    () => analyzeDay(sun.date, site, spaces, blockers, horizon, selectedId),
+    [dayStamp, site, spaces, blockers, horizon, selectedId],
   );
 
   const maxH = Math.max(1, ...days.map((d) => d.hoursDirect));
@@ -43,7 +45,9 @@ export function YearPanel() {
     <div className="flex h-full flex-col gap-4 overflow-y-auto pb-4">
       <header>
         <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted">{year} insolation</p>
-        <h2 className="mt-1 font-display text-2xl leading-tight">Hours of direct sun</h2>
+        <h2 className="mt-1 font-display text-2xl leading-tight">
+          {today.spaceName ?? "Marked space"}
+        </h2>
         <p className="mt-2 max-w-prose text-sm leading-relaxed text-muted">{copy}</p>
       </header>
 
