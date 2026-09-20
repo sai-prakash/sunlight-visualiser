@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {solarPosition,instant,sunVector,rayBox,isLit,sampleSpace,dayStudy,validateStudy} from '../dist/solar.js';
+import {solarPosition,instant,sunVector,rayBox,isLit,sampleSpace,roomConfig,interiorPoint,roomOpeningHit,isInteriorLit,sampleInterior,dayStudy,validateStudy} from '../dist/solar.js';
 const box={x:10,y:0,w:2,d:6,base:0,h:12};
 test('NOAA/Meeus implementation agrees with independent NREL SPA example within 0.05 degrees',()=>{
   // https://midcdmz.nlr.gov/spa/spa_tester.c (accessed 2026-09-08).
@@ -59,6 +59,27 @@ test('space sampling responds to partial shade and never reports night as sunlig
  const f=sampleSpace(s,{azimuth:90,altitude:20},[box],12);
  assert.equal(f,.5);
  assert.equal(sampleSpace(s,{azimuth:90,altitude:-1},[],12),0);
+});
+test('interior rays must pass through the modeled opening',()=>{
+ const room={x:0,y:0,z:0,w:4,d:6,facadeAzimuth:90,openingWidth:2,openingHeight:2.2,sill:0};
+ const lowEast={azimuth:90,altitude:20},highEast={azimuth:90,altitude:60};
+ assert.ok(roomOpeningHit(interiorPoint(room,0,3),room,lowEast));
+ assert.equal(roomOpeningHit(interiorPoint(room,0,3),room,highEast),null);
+ assert.equal(roomOpeningHit(interiorPoint(room,0,.5),room,{azimuth:270,altitude:20}),null);
+ assert.equal(roomOpeningHit(interiorPoint(room,1.5,.5),room,lowEast),null);
+});
+test('interior sunlight still obeys external blockers',()=>{
+ const room={x:0,y:0,z:0,w:4,d:6,facadeAzimuth:90,openingWidth:2,openingHeight:2.2,sill:0};
+ const sun={azimuth:90,altitude:20},point=interiorPoint(room,0,1);
+ assert.equal(isInteriorLit(point,room,sun,[]),true);
+ assert.equal(isInteriorLit(point,room,sun,[{x:4,y:0,w:1,d:3,base:0,h:8}]),false);
+});
+test('interior floor sampling reports partial direct sun and zero with sun behind façade',()=>{
+ const room={x:0,y:0,z:0,w:4,d:6,facadeAzimuth:90,openingWidth:2,openingHeight:2.2,sill:0};
+ const fraction=sampleInterior(room,{azimuth:90,altitude:30},[],24);
+ assert.ok(fraction>0&&fraction<1);
+ assert.equal(sampleInterior(room,{azimuth:270,altitude:30},[],24),0);
+ assert.equal(roomConfig({...room,openingWidth:99}).openingWidth,4);
 });
 test('open-space sun-equivalent hours equal geometric daylight and shade cannot increase them',()=>{
  const site={lat:12.97,lon:77.59,offset:5.5},s={x:0,y:0,z:0,w:2,d:3};

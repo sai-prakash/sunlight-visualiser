@@ -51,6 +51,51 @@ export function sampleSpace(space,sun,blockers,n=8) {
   for(let i=0;i<n;i++)for(let j=0;j<n;j++) if(isLit([space.x-space.w/2+space.w*(i+0.5)/n,space.y-space.d/2+space.d*(j+0.5)/n,space.z+0.01],sun,blockers))lit++;
   return lit/(n*n);
 }
+
+/* Interior aperture model.
+   facadeAzimuth is the outward normal of the opening wall, clockwise from true north.
+   A floor point is direct-sun only when its ray to the sun crosses the rectangular
+   opening and remains clear of the existing external blocker model. */
+export function roomConfig(room) {
+  const width=Math.max(.1,room.w);
+  return {
+    facadeAzimuth:wrap(Number.isFinite(room.facadeAzimuth)?room.facadeAzimuth:180),
+    openingWidth:clamp(Number.isFinite(room.openingWidth)?room.openingWidth:Math.min(2.4,width*.75),.1,width),
+    openingHeight:clamp(Number.isFinite(room.openingHeight)?room.openingHeight:2.1,.1,10),
+    sill:clamp(Number.isFinite(room.sill)?room.sill:0,0,10)
+  };
+}
+export function interiorPoint(room,lateral,depth,z=.01) {
+  const {facadeAzimuth}=roomConfig(room),a=facadeAzimuth*rad;
+  const outward=[Math.sin(a),Math.cos(a)],right=[Math.cos(a),-Math.sin(a)];
+  const front=[room.x+outward[0]*room.d/2,room.y+outward[1]*room.d/2];
+  return [front[0]-outward[0]*depth+right[0]*lateral,front[1]-outward[1]*depth+right[1]*lateral,room.z+z];
+}
+export function roomOpeningHit(point,room,sun) {
+  if(sun.altitude<=0)return null;
+  const cfg=roomConfig(room),a=cfg.facadeAzimuth*rad;
+  const outward=[Math.sin(a),Math.cos(a)],right=[Math.cos(a),-Math.sin(a)];
+  const front=[room.x+outward[0]*room.d/2,room.y+outward[1]*room.d/2,room.z];
+  const v=sunVector(sun),den=v[0]*outward[0]+v[1]*outward[1];
+  if(den<=1e-8)return null;
+  const lambda=((front[0]-point[0])*outward[0]+(front[1]-point[1])*outward[1])/den;
+  if(lambda<=1e-8)return null;
+  const hit=[point[0]+v[0]*lambda,point[1]+v[1]*lambda,point[2]+v[2]*lambda];
+  const lateral=(hit[0]-front[0])*right[0]+(hit[1]-front[1])*right[1],height=hit[2]-room.z;
+  if(Math.abs(lateral)>cfg.openingWidth/2||height<cfg.sill||height>cfg.sill+cfg.openingHeight)return null;
+  return {hit,lateral,height,lambda};
+}
+export function isInteriorLit(point,room,sun,blockers=[]) {
+  return !!roomOpeningHit(point,room,sun)&&isLit(point,sun,blockers);
+}
+export function sampleInterior(room,sun,blockers=[],n=12) {
+  let lit=0;
+  for(let i=0;i<n;i++)for(let j=0;j<n;j++) {
+    const lateral=-room.w/2+room.w*(i+.5)/n,depth=room.d*(j+.5)/n;
+    if(isInteriorLit(interiorPoint(room,lateral,depth),room,sun,blockers))lit++;
+  }
+  return lit/(n*n);
+}
 export function dayStudy(day,site,space,blockers,step=10,n=5) {
   const samples=[];let hours=0,daylight=0;
   for(let minute=0;minute<1440;minute+=step) {
@@ -68,6 +113,12 @@ export function validateStudy(s) {
   for(const [type,items] of [['space',s.spaces],['blocker',s.blockers]]) for(const b of items) {
     if(typeof b.id!=='string'||typeof b.name!=='string'||b.name.length>100||!num(b.x,-1000,1000)||!num(b.y,-1000,1000)||!num(b.w,.1,500)||!num(b.d,.1,500))throw Error('Invalid geometry');
     if(type==='space'&&!num(b.z,-100,1000)||type==='blocker'&&(!num(b.base,-100,1000)||!num(b.h,.1,1000)))throw Error('Invalid elevation');
+    if(type==='space'){
+      if(b.facadeAzimuth!==undefined&&!num(b.facadeAzimuth,0,360))throw Error('Invalid façade azimuth');
+      if(b.openingWidth!==undefined&&(!num(b.openingWidth,.1,500)||b.openingWidth>b.w))throw Error('Invalid opening width');
+      if(b.openingHeight!==undefined&&!num(b.openingHeight,.1,10))throw Error('Invalid opening height');
+      if(b.sill!==undefined&&!num(b.sill,0,10))throw Error('Invalid sill height');
+    }
   }
   if(new Set([...s.spaces,...s.blockers].map(b=>b.id)).size!==s.spaces.length+s.blockers.length)throw Error('Duplicate object identifiers');
   return s;
